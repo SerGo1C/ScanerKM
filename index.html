@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<title>Сканер кода с камеры</title>
+<title>Сканер кода с камеры (смена камеры)</title>
 <style>
   body { font-family: monospace; padding: 20px; }
   #qr-reader {
@@ -27,24 +27,40 @@
     color:#aa0000;
     font-weight:bold;
   }
+  #controls {
+    margin-bottom: 10px;
+  }
+  button {
+    margin-right: 10px;
+    padding: 6px 12px;
+  }
 </style>
 </head>
 <body>
 
 <h2>Сканер кода с камеры телефона</h2>
 
-<button id="start-camera-btn">Включить камеру</button>
+<div id="controls">
+  <button id="start-camera-btn">Включить камеру</button>
+  <button id="switch-camera-btn" disabled>Сменить камеру</button>
+</div>
 
 <div id="qr-reader" style="display:none;"></div>
 
 <h3>Результат чтения (символы и их коды):</h3>
 <div id="output">[Пусто]</div>
 
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.7/minified/html5-qrcode.min.js"></script>
 <script>
   const output = document.getElementById('output');
   const startBtn = document.getElementById('start-camera-btn');
+  const switchBtn = document.getElementById('switch-camera-btn');
   const qrReaderElem = document.getElementById('qr-reader');
+
+  let html5QrcodeScanner;
+  let cameras = [];
+  let currentCameraIndex = 0;
+  let cameraStarted = false;
 
   function printableChar(ch) {
     const code = ch.charCodeAt(0);
@@ -87,46 +103,64 @@
   }
 
   function onScanFailure(error) {
-    // ошибки сканирования пока игнорируем
+    // ошибки можно игнорировать
   }
 
-  let html5QrcodeScanner;
-  let cameraStarted = false;
+  async function startCameraById(cameraId) {
+    if(cameraStarted && html5QrcodeScanner) {
+      await html5QrcodeScanner.stop();
+      cameraStarted = false;
+    }
+    qrReaderElem.style.display = 'block';
 
-  startBtn.addEventListener('click', () => {
-    if(cameraStarted) return;
+    try {
+      await html5QrcodeScanner.start(
+        cameraId,
+        { fps: 10, qrbox: 250 },
+        onScanSuccess,
+        onScanFailure
+      );
+      cameraStarted = true;
+      startBtn.disabled = true;
+      startBtn.textContent = "Камера включена";
+      switchBtn.disabled = cameras.length < 2;
+    } catch (err) {
+      console.error(`Не удалось запустить камеру: ${err}`);
+      alert("Ошибка запуска камеры: " + err);
+    }
+  }
+
+  startBtn.addEventListener('click', async () => {
     html5QrcodeScanner = new Html5Qrcode("qr-reader");
 
-    Html5Qrcode.getCameras().then(cameras => {
-      if(cameras && cameras.length) {
-        let cameraId = cameras[0].id;
-        cameras.forEach(cam => {
-          if(cam.label.toLowerCase().includes("back")) cameraId = cam.id;
-        });
-
-        qrReaderElem.style.display = 'block'; // показываем контейнер для сканера
-
-        html5QrcodeScanner.start(
-          cameraId,
-          { fps: 10, qrbox: 250 },
-          onScanSuccess,
-          onScanFailure
-        ).then(() => {
-          cameraStarted = true;
-          startBtn.disabled = true;
-          startBtn.textContent = "Камера включена";
-        }).catch(err => {
-          console.error(`Не удалось запустить камеру: ${err}`);
-          alert("Ошибка запуска камеры: " + err);
-        });
-
-      } else {
+    try {
+      cameras = await Html5Qrcode.getCameras();
+      if(!cameras || cameras.length === 0) {
         alert("Камеры не найдены.");
+        return;
       }
-    }).catch(err => {
+
+      // Предпочитаем заднюю камеру, если есть
+      currentCameraIndex = 0;
+      for(let i=0; i < cameras.length; i++) {
+        if(cameras[i].label.toLowerCase().includes("back")) {
+          currentCameraIndex = i;
+          break;
+        }
+      }
+
+      await startCameraById(cameras[currentCameraIndex].id);
+
+    } catch (err) {
       console.error(`Ошибка при получении камер: ${err}`);
       alert("Ошибка при получении камер: " + err);
-    });
+    }
+  });
+
+  switchBtn.addEventListener('click', async () => {
+    if(!cameraStarted || cameras.length < 2) return;
+    currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+    await startCameraById(cameras[currentCameraIndex].id);
   });
 </script>
 
