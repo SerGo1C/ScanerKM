@@ -27,6 +27,9 @@
     color:#aa0000;
     font-weight:bold;
   }
+  button {
+    margin-right: 10px;
+  }
 </style>
 </head>
 <body>
@@ -34,6 +37,7 @@
 <h2>Сканер кода с камеры телефона</h2>
 
 <button id="start-camera-btn">Включить камеру</button>
+<button id="switch-camera-btn" disabled>Переключить камеру</button>
 
 <div id="qr-reader" style="display:none;"></div>
 
@@ -44,6 +48,7 @@
 <script>
   const output = document.getElementById('output');
   const startBtn = document.getElementById('start-camera-btn');
+  const switchBtn = document.getElementById('switch-camera-btn');
   const qrReaderElem = document.getElementById('qr-reader');
 
   function printableChar(ch) {
@@ -87,38 +92,33 @@
   }
 
   function onScanFailure(error) {
-    // ошибки сканирования пока игнорируем
+    // ошибки сканирования игнорируем
   }
 
   let html5QrcodeScanner;
   let cameraStarted = false;
+  let cameras = [];
+  let currentCameraIndex = 0;
 
   startBtn.addEventListener('click', () => {
     if(cameraStarted) return;
+
     html5QrcodeScanner = new Html5Qrcode("qr-reader");
 
-    Html5Qrcode.getCameras().then(cameras => {
-      if(cameras && cameras.length) {
-        let cameraId = cameras[0].id;
-        cameras.forEach(cam => {
-          if(cam.label.toLowerCase().includes("back")) cameraId = cam.id;
-        });
+    Html5Qrcode.getCameras().then(cams => {
+      if(cams && cams.length) {
+        cameras = cams;
 
-        qrReaderElem.style.display = 'block'; // показываем контейнер для сканера
+        // Выбираем камеру с "back" в названии, если есть
+        currentCameraIndex = cams.findIndex(cam => cam.label.toLowerCase().includes("back"));
+        if(currentCameraIndex === -1) currentCameraIndex = 0;
 
-        html5QrcodeScanner.start(
-          cameraId,
-          { fps: 10, qrbox: 250 },
-          onScanSuccess,
-          onScanFailure
-        ).then(() => {
-          cameraStarted = true;
-          startBtn.disabled = true;
-          startBtn.textContent = "Камера включена";
-        }).catch(err => {
-          console.error(`Не удалось запустить камеру: ${err}`);
-          alert("Ошибка запуска камеры: " + err);
-        });
+        startCamera(cameras[currentCameraIndex].id);
+
+        // Сделать кнопку переключения активной при >1 камерах
+        if(cameras.length > 1) {
+          switchBtn.disabled = false;
+        }
 
       } else {
         alert("Камеры не найдены.");
@@ -128,6 +128,39 @@
       alert("Ошибка при получении камер: " + err);
     });
   });
+
+  switchBtn.addEventListener('click', () => {
+    if(!cameraStarted || cameras.length < 2) return;
+
+    // Остановим текущую камеру, затем включим следующую
+    html5QrcodeScanner.stop().then(() => {
+      currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+      startCamera(cameras[currentCameraIndex].id);
+    }).catch(err => {
+      console.error("Ошибка остановки камеры:", err);
+      alert("Ошибка при переключении камеры: " + err);
+    });
+  });
+
+  function startCamera(cameraId) {
+    qrReaderElem.style.display = 'block'; // показываем контейнер для сканера
+
+    html5QrcodeScanner.start(
+      cameraId,
+      { fps: 10, qrbox: 250 },
+      onScanSuccess,
+      onScanFailure
+    ).then(() => {
+      cameraStarted = true;
+      startBtn.disabled = true;
+      startBtn.textContent = "Камера включена";
+      const label = cameras[currentCameraIndex].label || `Камера ${currentCameraIndex + 1}`;
+      switchBtn.textContent = `Переключить камеру (Сейчас: ${label})`;
+    }).catch(err => {
+      console.error(`Не удалось запустить камеру: ${err}`);
+      alert("Ошибка запуска камеры: " + err);
+    });
+  }
 </script>
 
 </body>
