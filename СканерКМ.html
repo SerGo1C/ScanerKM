@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Сканер кода с камеры</title>
+<style>
+  body { font-family: monospace; padding: 20px; }
+  #qr-reader {
+    width: 300px;
+    margin-bottom: 10px;
+  }
+  #output {
+    border: 1px solid #ccc;
+    padding: 10px;
+    white-space: pre-wrap;
+  }
+  .char {
+    display:inline-block;
+    border:1px solid #ddd;
+    padding: 2px 6px;
+    margin: 2px;
+    border-radius:3px;
+    user-select:none;
+  }
+  .ctrl {
+    background:#ffdddd;
+    color:#aa0000;
+    font-weight:bold;
+  }
+</style>
+</head>
+<body>
+
+<h2>Сканер кода с камеры телефона</h2>
+
+<button id="start-camera-btn">Включить камеру</button>
+
+<div id="qr-reader" style="display:none;"></div>
+
+<h3>Результат чтения (символы и их коды):</h3>
+<div id="output">[Пусто]</div>
+
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script>
+  const output = document.getElementById('output');
+  const startBtn = document.getElementById('start-camera-btn');
+  const qrReaderElem = document.getElementById('qr-reader');
+
+  function printableChar(ch) {
+    const code = ch.charCodeAt(0);
+    if (code === 32) return "' '"; // пробел
+    if (ch === '\n') return '\\n';
+    if (ch === '\r') return '\\r';
+    if (ch === '\t') return '\\t';
+    if (code < 32 || code === 127) {
+      const names = {
+        0: 'NUL', 1: 'SOH', 2: 'STX', 3: 'ETX', 4: 'EOT',
+        5: 'ENQ', 6: 'ACK', 7: 'BEL', 8: 'BS', 9: 'TAB',
+        10:'LF', 11:'VT', 12:'FF', 13:'CR', 14:'SO', 15:'SI',
+        16:'DLE',17:'DC1',18:'DC2',19:'DC3',20:'DC4',
+        21:'NAK',22:'SYN',23:'ETB',24:'CAN',25:'EM',
+        26:'SUB',27:'ESC',28:'FS',29:'GS',30:'RS',31:'US',
+        127:'DEL'
+      };
+      return names[code] || `0x${code.toString(16).toUpperCase()}`;
+    }
+    return ch.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function showResult(text) {
+    output.innerHTML = '';
+    for(let i=0; i < text.length; i++) {
+      const ch = text[i];
+      const code = text.charCodeAt(i);
+      const span = document.createElement('span');
+      span.classList.add('char');
+      if(code < 32 || code === 127) span.classList.add('ctrl');
+      span.innerHTML = printableChar(ch) + '<br><small>' + code + '</small>';
+      output.appendChild(span);
+    }
+    if(text.length === 0) output.textContent = '[Пусто]';
+  }
+
+  function onScanSuccess(decodedText, decodedResult) {
+    console.log(`Считано: ${decodedText}`);
+    showResult(decodedText);
+  }
+
+  function onScanFailure(error) {
+    // ошибки сканирования пока игнорируем
+  }
+
+  let html5QrcodeScanner;
+  let cameraStarted = false;
+
+  startBtn.addEventListener('click', () => {
+    if(cameraStarted) return;
+    html5QrcodeScanner = new Html5Qrcode("qr-reader");
+
+    Html5Qrcode.getCameras().then(cameras => {
+      if(cameras && cameras.length) {
+        let cameraId = cameras[0].id;
+        cameras.forEach(cam => {
+          if(cam.label.toLowerCase().includes("back")) cameraId = cam.id;
+        });
+
+        qrReaderElem.style.display = 'block'; // показываем контейнер для сканера
+
+        html5QrcodeScanner.start(
+          cameraId,
+          { fps: 10, qrbox: 250 },
+          onScanSuccess,
+          onScanFailure
+        ).then(() => {
+          cameraStarted = true;
+          startBtn.disabled = true;
+          startBtn.textContent = "Камера включена";
+        }).catch(err => {
+          console.error(`Не удалось запустить камеру: ${err}`);
+          alert("Ошибка запуска камеры: " + err);
+        });
+
+      } else {
+        alert("Камеры не найдены.");
+      }
+    }).catch(err => {
+      console.error(`Ошибка при получении камер: ${err}`);
+      alert("Ошибка при получении камер: " + err);
+    });
+  });
+</script>
+
+</body>
+</html>
