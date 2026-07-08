@@ -88,7 +88,7 @@
     margin: 3px 4px;
     border-radius: 8px;
     font-size: 1.1rem;
-    user-select: none;
+    user-select:none;
     min-width: 28px;
   }
 
@@ -132,46 +132,25 @@
 <h3>Результат чтения (символы и их коды):</h3>
 <div id="output">[Пусто]</div>
 
-<!-- Блок копирования одной строкой -->
-<div class="copy-container" style="max-width: 350px; margin: 20px auto; text-align: center;">
-  <textarea id="raw-text-output" readonly placeholder="Здесь появится чистый код для копирования..." style="width: 100%; height: 70px; border-radius: 10px; border: 1px solid #ddd; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 1rem; resize: none;"></textarea>
-  <button id="copy-btn" disabled style="background-color: #2e7d32; box-shadow: 0 3px 6px rgba(46, 125, 50, 0.3); margin: 10px auto;">Скопировать весь код</button>
-  <div id="copy-toast" style="color: #2e7d32; font-weight: bold; margin-top: 5px; min-height: 20px;"></div>
+<!-- Поле для копирования одной строкой -->
+<div style="max-width: 350px; margin: 20px auto; text-align: center;">
+  <textarea id="plain-output" readonly placeholder="Здесь появится чистый код..." style="width: 100%; height: 60px; border-radius: 10px; border: 1px solid #ddd; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 1rem; resize: none;"></textarea>
+  <button id="copy-btn" disabled style="background-color: #2e7d32; box-shadow: 0 3px 6px rgba(46, 125, 50, 0.3); margin: 10px auto;">Скопировать код</button>
 </div>
 
-<script src="https://unpkg.com" type="text/javascript"></script>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <script>
   const output = document.getElementById('output');
   const startBtn = document.getElementById('start-camera-btn');
   const switchBtn = document.getElementById('switch-camera-btn');
   const qrReaderElem = document.getElementById('qr-reader');
   
-  const rawTextOutput = document.getElementById('raw-text-output');
+  const plainOutput = document.getElementById('plain-output');
   const copyBtn = document.getElementById('copy-btn');
-  const copyToast = document.getElementById('copy-toast');
-
-  // Функция звукового сигнала
-  function beep() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 1200; 
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.1);
-    } catch (e) {
-      console.error("Звук заблокирован политикой браузера до первого клика:", e);
-    }
-  }
 
   function printableChar(ch) {
     const code = ch.charCodeAt(0);
-    if (code === 32) return "' '"; 
+    if (code === 32) return "' '"; // пробел
     if (ch === '\n') return '\\n';
     if (ch === '\r') return '\\r';
     if (ch === '\t') return '\\t';
@@ -193,13 +172,12 @@
   function showResult(text) {
     output.innerHTML = '';
     
-    // Заполняем текстовое поле для копирования оригинальным текстом
-    rawTextOutput.value = text;
-    if(text.length > 0) {
+    // Заполняем поле для копирования чистым текстом
+    plainOutput.value = text;
+    if (text.length > 0) {
       copyBtn.disabled = false;
     } else {
       copyBtn.disabled = true;
-      rawTextOutput.value = '';
     }
 
     for(let i=0; i < text.length; i++) {
@@ -214,24 +192,13 @@
     if(text.length === 0) output.textContent = '[Пусто]';
   }
 
-  // Защита от дребезга (повторные мгновенные сканирования)
-  let lastScannedText = "";
-  let lastScannedTime = 0;
-
   function onScanSuccess(decodedText, decodedResult) {
-    const now = Date.now();
-    if (decodedText === lastScannedText && (now - lastScannedTime < 2000)) return;
-    
-    lastScannedText = decodedText;
-    lastScannedTime = now;
-
     console.log(`Считано: ${decodedText}`);
-    beep();
     showResult(decodedText);
   }
 
   function onScanFailure(error) {
-    // Ошибки пропускаем
+    // ошибки игнорируем
   }
 
   let html5QrcodeScanner;
@@ -239,7 +206,6 @@
   let cameras = [];
   let currentCameraIndex = 0;
 
-  // ВОЗВРАТ К ВАШЕМУ НАДЁЖНОМУ АЛГОРИТМУ ЗАПУСКА КАМЕРЫ
   startBtn.addEventListener('click', () => {
     if(cameraStarted) return;
 
@@ -257,6 +223,7 @@
         if(cameras.length > 1) {
           switchBtn.disabled = false;
         }
+
       } else {
         alert("Камеры не найдены.");
       }
@@ -281,7 +248,6 @@
   function startCamera(cameraId) {
     qrReaderElem.style.display = 'block';
 
-    // Конфигурация возвращена к вашему исходному всеядному стандарту
     html5QrcodeScanner.start(
       cameraId,
       { fps: 10, qrbox: 250 },
@@ -299,24 +265,20 @@
     });
   }
 
-  // Кнопка копирования полученного кода маркировки
+  // Логика кнопки копирования
   copyBtn.addEventListener('click', () => {
-    if (!rawTextOutput.value) return;
-    
-    rawTextOutput.select();
-    rawTextOutput.setSelectionRange(0, 99999); // Для iOS устройств
-
-    navigator.clipboard.writeText(rawTextOutput.value).then(() => {
-      copyToast.textContent = "✓ Код успешно скопирован!";
-      setTimeout(() => { copyToast.textContent = ""; }, 2500);
+    if (!plainOutput.value) return;
+    plainOutput.select();
+    plainOutput.setSelectionRange(0, 99999); // Для iOS устройств
+    navigator.clipboard.writeText(plainOutput.value).then(() => {
+      alert("Код скопирован в буфер обмена!");
     }).catch(err => {
-      console.error('Не удалось скопировать: ', err);
+      // Резервный метод если навигатор заблокирован
       try {
         document.execCommand('copy');
-        copyToast.textContent = "✓ Скопировано (резервный метод)";
-        setTimeout(() => { copyToast.textContent = ""; }, 2500);
+        alert("Код скопирован!");
       } catch (e) {
-        alert("Не удалось скопировать автоматически. Выделите текст в поле и скопируйте вручную.");
+        alert("Не удалось скопировать автоматически. Выделите текст в поле руками.");
       }
     });
   });
