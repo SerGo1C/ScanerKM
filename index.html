@@ -88,7 +88,7 @@
     margin: 3px 4px;
     border-radius: 8px;
     font-size: 1.1rem;
-    user-select:none;
+    user-select: none;
     min-width: 28px;
   }
 
@@ -132,12 +132,42 @@
 <h3>Результат чтения (символы и их коды):</h3>
 <div id="output">[Пусто]</div>
 
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<!-- Поле для копирования одной строкой -->
+<div class="copy-container" style="max-width: 350px; margin: 20px auto; text-align: center;">
+  <textarea id="raw-text-output" readonly placeholder="Здесь появится чистый код для копирования..." style="width: 100%; height: 70px; border-radius: 10px; border: 1px solid #ddd; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 1rem; resize: none;"></textarea>
+  <button id="copy-btn" disabled style="background-color: #2e7d32; box-shadow: 0 3px 6px rgba(46, 125, 50, 0.3); margin: 10px auto;">Скопировать весь код</button>
+  <div id="copy-toast" style="color: #2e7d32; font-weight: bold; margin-top: 5px; min-height: 20px;"></div>
+</div>
+
+<script src="https://unpkg.com" type="text/javascript"></script>
 <script>
   const output = document.getElementById('output');
   const startBtn = document.getElementById('start-camera-btn');
   const switchBtn = document.getElementById('switch-camera-btn');
   const qrReaderElem = document.getElementById('qr-reader');
+  
+  const rawTextOutput = document.getElementById('raw-text-output');
+  const copyBtn = document.getElementById('copy-btn');
+  const copyToast = document.getElementById('copy-toast');
+
+  // Функция звукового сигнала (бипа)
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 1200; 
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+      console.error("Не удалось воспроизвести звук:", e);
+    }
+  }
 
   function printableChar(ch) {
     const code = ch.charCodeAt(0);
@@ -162,6 +192,16 @@
 
   function showResult(text) {
     output.innerHTML = '';
+    
+    // Заполняем поле для копирования чистым текстом
+    rawTextOutput.value = text;
+    if(text.length > 0) {
+      copyBtn.disabled = false;
+    } else {
+      copyBtn.disabled = true;
+      rawTextOutput.value = '';
+    }
+
     for(let i=0; i < text.length; i++) {
       const ch = text[i];
       const code = text.charCodeAt(i);
@@ -174,13 +214,24 @@
     if(text.length === 0) output.textContent = '[Пусто]';
   }
 
+  // Защита от дребезга (повторное сканирование одного кода)
+  let lastScannedText = "";
+  let lastScannedTime = 0;
+
   function onScanSuccess(decodedText, decodedResult) {
+    const now = Date.now();
+    if (decodedText === lastScannedText && (now - lastScannedTime < 2000)) return;
+    
+    lastScannedText = decodedText;
+    lastScannedTime = now;
+
     console.log(`Считано: ${decodedText}`);
+    beep();
     showResult(decodedText);
   }
 
   function onScanFailure(error) {
-    // ошибки игнорируем
+    // Ошибки фокусировки и кадров игнорируем
   }
 
   let html5QrcodeScanner;
@@ -197,7 +248,8 @@
       if(cams && cams.length) {
         cameras = cams;
 
-        currentCameraIndex = cams.findIndex(cam => cam.label.toLowerCase().includes("back"));
+        // Поиск основной задней камеры
+        currentCameraIndex = cams.findIndex(cam => cam.label.toLowerCase().includes("back") || cam.label.toLowerCase().includes("environment"));
         if(currentCameraIndex === -1) currentCameraIndex = 0;
 
         startCamera(cameras[currentCameraIndex].id);
@@ -232,21 +284,54 @@
 
     html5QrcodeScanner.start(
       cameraId,
-      { fps: 10, qrbox: 250 },
+      { 
+        fps: 15, 
+        qrbox: function(width, height) {
+          return { width: width * 0.7, height: width * 0.7 };
+        },
+        // Активируем фокус только на нужных Честному Знаку форматах
+        formatsToSupport: [ 
+          Html5QrcodeSupportedFormats.DATA_MATRIX, 
+          Html5QrcodeSupportedFormats.QR_CODE 
+        ],
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
+      },
       onScanSuccess,
       onScanFailure
     ).then(() => {
       cameraStarted = true;
       startBtn.disabled = true;
-      startBtn.textContent = "Камера включена";
+      startBtn.textContent = "Сканер активен";
       const label = cameras[currentCameraIndex].label || `Камера ${currentCameraIndex + 1}`;
-      switchBtn.textContent = `Переключить камеру (Сейчас: ${label})`;
+      switchBtn.textContent = `Сменить камеру (Сейчас: ${label})`;
+      
+      // Попытка принудительно активировать непрерывный автофокус
+      const track = html5QrcodeScanner.getRunningTrack();
+      if (track && track.getCapabilities && track.getCapabilities().focusMode) {
+        track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+      }
     }).catch(err => {
       console.error(`Не удалось запустить камеру: ${err}`);
       alert("Ошибка запуска камеры: " + err);
     });
   }
-</script>
 
-</body>
-</html>
+  // Обработчик копирования в буфер обмена
+  copyBtn.addEventListener('click', () => {
+    if (!rawTextOutput.value) return;
+    
+    rawTextOutput.select();
+    rawTextOutput.setSelectionRange(0, 99999); // Для iOS устройств
+
+    navigator.clipboard.writeText(rawTextOutput.value).then(() => {
+      copyToast.textContent = "✓ Код успешно скопирован!";
+      setTimeout(() => { copyToast.textContent = ""; }, 2500);
+    }).catch(err => {
+      console.error('Не удалось скопировать: ', err);
+      try {
+        document.execCommand('copy');
+        copyToast.textContent = "✓ Скопировано (резервный метод)";
+        setTimeout(() => { copyToast.textContent = ""; }, 2500);
+      } catch (e) {
